@@ -515,8 +515,7 @@ def main():
 			
 			with col1:
 				st.markdown("#### 🖼️ Image Preview")
-				
-                st.image(st.session_state["uploaded_bytes"], use_column_width=True)				
+				st.image(st.session_state["uploaded_bytes"], use_column_width=True)				
 				# Clear button
 				if st.button("🗑️ Clear Analysis", type="secondary"):
 					st.session_state["analyzed"] = False
