@@ -105,47 +105,60 @@ def format_probability(p: float) -> str:
 
 def generate_gradcam(model, img_array, last_conv_layer_name=None):
     """
-    Robust Grad-CAM implementation for all Keras models after loading: always uses model.get_layer and model.inputs.
+    Fixed Grad-CAM implementation to resolve the 'layer sequential has never been called' error.
     """
     import cv2
     from tensorflow.keras.layers import Conv2D
+    
     try:
-        # Identify available Conv2D layers
-        conv_layers = [(i, layer.name) for i, layer in enumerate(model.layers) if isinstance(layer, Conv2D)]
-        if not conv_layers:
-            return None, "Model contains no Conv2D layers."
-        # Auto-select last Conv2D if not explicitly provided
+        # 1. Identify the last Conv2D layer automatically
         if last_conv_layer_name is None:
-            _, layer_to_try = conv_layers[-1]
-        else:
-            candidates = [item for item in conv_layers if item[1] == last_conv_layer_name]
-            if not candidates:
-                return None, f"Named Conv2D layer '{last_conv_layer_name}' not found. Available: {[name for _, name in conv_layers]}"
-            _, layer_to_try = candidates[0]
-        # Use get_layer (.output) and model.inputs for maximum compatibility
+            conv_layers = [layer.name for layer in model.layers if isinstance(layer, Conv2D)]
+            if not conv_layers:
+                return None, "Model contains no Conv2D layers."
+            last_conv_layer_name = conv_layers[-1]
+
+        # 2. Re-instantiate the model as a functional model to ensure tensors are 'called'
+        # This is the key fix for the 'sequential has never been called' error
+        img_input = tf.keras.Input(shape=(150, 150, 3))
+        output = model(img_input)
+        
+        # 3. Build the gradient model using the new input and the existing model's layers
         grad_model = tf.keras.models.Model(
-            model.inputs,
-            [model.get_layer(layer_to_try).output, model.output]
+            inputs=[img_input],
+            outputs=[model.get_layer(last_conv_layer_name).output, model.output]
         )
+
+        # 4. Record operations for automatic differentiation
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(img_array)
-            pred_index = tf.argmax(predictions[0]) if predictions.shape[-1] > 1 else 0
-            class_channel = predictions[:, pred_index] if predictions.shape[-1] > 1 else predictions[:, 0]
-            grads = tape.gradient(class_channel, conv_outputs)
-        if grads is None:
-            return None, "Could not compute gradients wrt convolutional layer. Check model connectivity."
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-        conv_outputs = conv_outputs[0]
-        heatmap = tf.reduce_sum(tf.multiply(pooled_grads, conv_outputs), axis=-1)
-        heatmap = np.maximum(heatmap, 0)
-        max_val = np.max(heatmap) if np.max(heatmap) != 0 else 1.0
-        heatmap = heatmap / max_val
-        heatmap = cv2.resize(heatmap.numpy(), (150, 150))
-        return heatmap.astype(np.float32), None
-    except Exception as e:
-        conv_layers = [(layer.name, type(layer).__name__) for layer in model.layers]
-        return None, f"Error in Grad-CAM: {str(e)}. All layers: {conv_layers}"
+            # Since this is likely binary (Normal vs Pneumonia), we target the first neuron
+            loss = predictions[:, 0]
 
+        # 5. Calculate gradients
+        grads = tape.gradient(loss, conv_outputs)
+        if grads is None:
+            return None, "Could not compute gradients. Check if the layer name is correct."
+
+        # 6. Global Average Pooling of gradients
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        
+        # 7. Weight the feature map by the pooled gradients
+        conv_outputs = conv_outputs[0]
+        heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap)
+
+        # 8. ReLU activation and normalization
+        heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-10)
+        heatmap = heatmap.numpy()
+        
+        # 9. Resize to original image size
+        heatmap = cv2.resize(heatmap, (150, 150))
+        
+        return heatmap.astype(np.float32), None
+
+    except Exception as e:
+        return None, f"Error in Grad-CAM: {str(e)}"
 
 def overlay_heatmap(img_bytes, heatmap, intensity=0.5):
     """
