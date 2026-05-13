@@ -107,29 +107,27 @@ def generate_gradcam(model, img_array, last_conv_layer_name=None):
     import cv2
     from tensorflow.keras.layers import Conv2D
     try:
-        # Auto-select the last Conv2D layer if none specified
+        # 1. Automatically find the last Conv2D layer
         if last_conv_layer_name is None:
             conv_layers = [layer.name for layer in model.layers if isinstance(layer, Conv2D)]
             if not conv_layers:
                 return None, "Model contains no Conv2D layers."
             last_conv_layer_name = conv_layers[-1]
 
-        # RE-INSTANTIATE as a functional model to ensure tensors are 'called'
-        # This is the direct fix for the 'sequential has never been called' error
-        img_input = tf.keras.Input(shape=(150, 150, 3))
-        output = model(img_input)
-        
+        # 2. Use the EXISTING model inputs and outputs to avoid naming conflicts
+        # This bypasses the "Input_layer used 2 times" error
         grad_model = tf.keras.models.Model(
-            inputs=[img_input],
+            inputs=[model.input],
             outputs=[model.get_layer(last_conv_layer_name).output, model.output]
         )
 
+        # 3. Use GradientTape to calculate the heatmap
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(img_array)
-            # Target the class prediction (binary classification)
+            # Binary classification usually targets index 0
             loss = predictions[:, 0]
 
-        # Calculate and pool gradients
+        # 4. Extract gradients and calculate the final heatmap
         grads = tape.gradient(loss, conv_outputs)
         pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
         
@@ -137,7 +135,7 @@ def generate_gradcam(model, img_array, last_conv_layer_name=None):
         heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
 
-        # Normalize and resize
+        # 5. Normalize and resize
         heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-10)
         heatmap = heatmap.numpy()
         heatmap = cv2.resize(heatmap, (150, 150))
