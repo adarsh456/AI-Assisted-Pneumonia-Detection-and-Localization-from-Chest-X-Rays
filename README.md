@@ -36,3 +36,24 @@ The underlying model is a custom **Convolutional Neural Network (CNN)** structur
    ```bash
    git clone [https://github.com/adarsh456/ai-assisted-pneumonia-detection-and-localization-from-chest-x-rays.git](https://github.com/adarsh456/ai-assisted-pneumonia-detection-and-localization-from-chest-x-rays.git)
    cd ai-assisted-pneumonia-detection-and-localization-from-chest-x-rays
+
+2. Setup the Environment:
+It is highly recommended to use Python 3.11 for full compatibility with the project's dependencies, specifically TensorFlow 2.18.
+   ```bash
+   pip install -r requirements.txt
+3. Run the Application:
+Launch the local development server:
+   ```bash
+   streamlit run app.py
+
+
+
+##⚠️ Medical Disclaimer
+
+**This application is for educational and research purposes only.** It is not intended to be a substitute for professional medical advice, diagnosis, or treatment. 
+
+*   The results provided by this AI are not a medical diagnosis.
+*   The Grad-CAM localization is a mathematical representation of model focus and should not be used for clinical or surgical planning.
+*   Always seek the advice of a physician or other qualified health provider with any questions you may have regarding a medical condition.
+
+
