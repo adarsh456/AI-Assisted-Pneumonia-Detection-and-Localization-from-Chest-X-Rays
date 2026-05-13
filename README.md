@@ -48,7 +48,7 @@ Launch the local development server:
 
 
 
-##⚠️ Medical Disclaimer
+## ⚠️ Medical Disclaimer
 
 **This application is for educational and research purposes only.** It is not intended to be a substitute for professional medical advice, diagnosis, or treatment. 
 
