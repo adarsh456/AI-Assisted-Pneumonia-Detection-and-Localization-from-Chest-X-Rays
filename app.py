@@ -12,13 +12,13 @@ import cv2  # <-- ADDED for Grad-CAM
 
 @st.cache_resource(show_spinner=False)
 def load_model():
-    # Loads the Keras model once and caches it for the app lifetime
+    # 1. Load the Keras model file
     model = tf.keras.models.load_model("pneumonia_detection_model.h5")
-    try:
-        # Force build of model graph for access to 'input' (necessary for Grad-CAM etc)
-        model.predict(np.zeros((1, 150, 150, 3), dtype=np.float32))
-    except Exception:
-        pass
+    
+    # 2. Explicitly build the model with the expected input shape
+    # This ensures every layer (conv2d, dense, etc.) has defined output tensors
+    model.build((None, 150, 150, 3)) 
+    
     return model
 
 
