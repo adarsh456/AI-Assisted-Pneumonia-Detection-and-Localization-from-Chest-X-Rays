@@ -12,11 +12,13 @@ import cv2  # <-- ADDED for Grad-CAM
 
 @st.cache_resource(show_spinner=False)
 def load_model():
+    # Clear the Keras session to reset name counters and prevent "Input_layer" duplicates
+    tf.keras.backend.clear_session()
+    
     # Load the Keras model
     model = tf.keras.models.load_model("pneumonia_detection_model.h5")
     
-    # CRITICAL: Build the model with your input shape (150x150, 3 channels)
-    # This ensures all layers have defined output tensors for Grad-CAM
+    # Force build
     model.build((None, 150, 150, 3)) 
     
     return model
@@ -117,7 +119,7 @@ def generate_gradcam(model, img_array, last_conv_layer_name=None):
         # 2. Use the EXISTING model inputs and outputs to avoid naming conflicts
         # This bypasses the "Input_layer used 2 times" error
         grad_model = tf.keras.models.Model(
-            inputs=[model.input],
+            inputs=[model.inputs],
             outputs=[model.get_layer(last_conv_layer_name).output, model.output]
         )
 
