@@ -12,11 +12,11 @@ import cv2  # <-- ADDED for Grad-CAM
 
 @st.cache_resource(show_spinner=False)
 def load_model():
-    # 1. Load the Keras model file
+    # Load the Keras model
     model = tf.keras.models.load_model("pneumonia_detection_model.h5")
     
-    # 2. Explicitly build the model with the expected input shape
-    # This ensures every layer (conv2d, dense, etc.) has defined output tensors
+    # CRITICAL: Build the model with your input shape (150x150, 3 channels)
+    # This ensures all layers have defined output tensors for Grad-CAM
     model.build((None, 150, 150, 3)) 
     
     return model
@@ -104,55 +104,42 @@ def format_probability(p: float) -> str:
 
 
 def generate_gradcam(model, img_array, last_conv_layer_name=None):
-    """
-    Fixed Grad-CAM implementation to resolve the 'layer sequential has never been called' error.
-    """
     import cv2
     from tensorflow.keras.layers import Conv2D
-    
     try:
-        # 1. Identify the last Conv2D layer automatically
+        # Auto-select the last Conv2D layer if none specified
         if last_conv_layer_name is None:
             conv_layers = [layer.name for layer in model.layers if isinstance(layer, Conv2D)]
             if not conv_layers:
                 return None, "Model contains no Conv2D layers."
             last_conv_layer_name = conv_layers[-1]
 
-        # 2. Re-instantiate the model as a functional model to ensure tensors are 'called'
-        # This is the key fix for the 'sequential has never been called' error
+        # RE-INSTANTIATE as a functional model to ensure tensors are 'called'
+        # This is the direct fix for the 'sequential has never been called' error
         img_input = tf.keras.Input(shape=(150, 150, 3))
         output = model(img_input)
         
-        # 3. Build the gradient model using the new input and the existing model's layers
         grad_model = tf.keras.models.Model(
             inputs=[img_input],
             outputs=[model.get_layer(last_conv_layer_name).output, model.output]
         )
 
-        # 4. Record operations for automatic differentiation
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(img_array)
-            # Since this is likely binary (Normal vs Pneumonia), we target the first neuron
+            # Target the class prediction (binary classification)
             loss = predictions[:, 0]
 
-        # 5. Calculate gradients
+        # Calculate and pool gradients
         grads = tape.gradient(loss, conv_outputs)
-        if grads is None:
-            return None, "Could not compute gradients. Check if the layer name is correct."
-
-        # 6. Global Average Pooling of gradients
         pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
         
-        # 7. Weight the feature map by the pooled gradients
         conv_outputs = conv_outputs[0]
         heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
 
-        # 8. ReLU activation and normalization
+        # Normalize and resize
         heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-10)
         heatmap = heatmap.numpy()
-        
-        # 9. Resize to original image size
         heatmap = cv2.resize(heatmap, (150, 150))
         
         return heatmap.astype(np.float32), None
